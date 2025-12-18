@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Markdown实时预览</title>
+    <style>
+        /* GitHub Markdown样式 */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+            line-height: 1.5;
+            color: #24292e;
+            background-color: #ffffff;
+        }
+        
+        .container {
+            max-width: 980px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+        
+        #preview {
+            background-color: #ffffff;
+            border: 1px solid #e1e4e8;
+            border-radius: 6px;
+            padding: 32px;
+            min-height: 500px;
+        }
+        
+        /* GitHub Markdown 基础样式 */
+        #preview {
+            font-size: 16px;
+        }
+        
+        /* 标题样式 */
+        #preview h1 {
+            padding-bottom: 0.3em;
+            font-size: 2em;
+            border-bottom: 1px solid #eaecef;
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: 600;
+            line-height: 1.25;
+        }
+        
+        #preview h2 {
+            padding-bottom: 0.3em;
+            font-size: 1.5em;
+            border-bottom: 1px solid #eaecef;
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: 600;
+            line-height: 1.25;
+        }
+        
+        #preview h3 {
+            font-size: 1.25em;
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: 600;
+            line-height: 1.25;
+        }
+        
+        #preview h4 {
+            font-size: 1em;
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: 600;
+            line-height: 1.25;
+        }
+        
+        #preview h5 {
+            font-size: 0.875em;
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: 600;
+            line-height: 1.25;
+        }
+        
+        #preview h6 {
+            font-size: 0.85em;
+            color: #6a737d;
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: 600;
+            line-height: 1.25;
+        }
+        
+        /* 段落样式 */
+        #preview p {
+            margin-top: 0;
+            margin-bottom: 16px;
+        }
+        
+        /* 链接样式 */
+        #preview a {
+            color: #0366d6;
+            text-decoration: none;
+        }
+        
+        #preview a:hover {
+            text-decoration: underline;
+        }
+        
+        /* 列表样式 */
+        #preview ul, #preview ol {
+            padding-left: 2em;
+            margin-top: 0;
+            margin-bottom: 16px;
+        }
+        
+        #preview li {
+            margin-top: 0.25em;
+        }
+        
+        #preview li + li {
+            margin-top: 0.25em;
+        }
+        
+        /* 代码样式 */
+        #preview code {
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+            font-size: 85%;
+            padding: 0.2em 0.4em;
+            margin: 0;
+            background-color: rgba(27, 31, 35, 0.05);
+            border-radius: 3px;
+        }
+        
+        #preview pre {
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+            font-size: 85%;
+            line-height: 1.45;
+            background-color: #f6f8fa;
+            border-radius: 6px;
+            padding: 16px;
+            overflow: auto;
+            margin-top: 0;
+            margin-bottom: 16px;
+        }
+        
+        #preview pre code {
+            background-color: transparent;
+            padding: 0;
+            margin: 0;
+            font-size: 100%;
+            word-break: normal;
+            white-space: pre;
+            background: transparent;
+            border: 0;
+        }
+        
+        /* 引用样式 */
+        #preview blockquote {
+            padding: 0 1em;
+            color: #6a737d;
+            border-left: 0.25em solid #dfe2e5;
+            margin-top: 0;
+            margin-bottom: 16px;
+        }
+        
+        /* 表格样式 */
+        #preview table {
+            border-spacing: 0;
+            border-collapse: collapse;
+            width: 100%;
+            overflow: auto;
+            margin-top: 0;
+            margin-bottom: 16px;
+        }
+        
+        #preview table th {
+            font-weight: 600;
+        }
+        
+        #preview table th,
+        #preview table td {
+            padding: 6px 13px;
+            border: 1px solid #dfe2e5;
+        }
+        
+        #preview table tr {
+            background-color: #fff;
+            border-top: 1px solid #c6cbd1;
+        }
+        
+        #preview table tr:nth-child(2n) {
+            background-color: #f6f8fa;
+        }
+        
+        /* 图片样式 */
+        #preview img {
+            max-width: 100%;
+            box-sizing: content-box;
+            background-color: #fff;
+            margin-top: 0;
+            margin-bottom: 16px;
+        }
+        
+        /* 水平线样式 */
+        #preview hr {
+            height: 0.25em;
+            padding: 0;
+            margin: 24px 0;
+            background-color: #e1e4e8;
+            border: 0;
+        }
+        
+        /* 加粗样式 */
+        #preview strong {
+            font-weight: 600;
+        }
+        
+        /* 斜体样式 */
+        #preview em {
+            font-style: italic;
+        }
+        
+        /* 状态提示 */
+        .status {
+            text-align: center;
+            margin-bottom: 16px;
+            font-size: 14px;
+            color: #6a737d;
+        }
+        
+        .status.connected {
+            color: #28a745;
+        }
+        
+        .status.disconnected {
+            color: #d73a49;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+
+        <div class="status" id="status">正在连接服务器...</div>
+        <div id="preview">
+            <p>等待加载Markdown内容...</p>
+        </div>
+    </div>
+    
+    <script>
+        const statusElement = document.getElementById('status');
+        const previewElement = document.getElementById('preview');
+        
+        // 直接连接WebSocket，不再需要URL参数
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+        const ws = new WebSocket(wsUrl);
+        
+        ws.onopen = function() {
+            statusElement.textContent = '已连接到服务器，实时监听文件变化...';
+            statusElement.className = 'status connected';
+        };
+        
+        ws.onmessage = function(event) {
+            // 更新预览内容
+            previewElement.innerHTML = event.data;
+        };
+        
+        ws.onclose = function() {
+            statusElement.textContent = '与服务器断开连接，尝试重新连接...';
+            statusElement.className = 'status disconnected';
+            // 尝试重新连接
+            setTimeout(function() {
+                window.location.reload();
+            }, 3000);
+        };
+        
+        ws.onerror = function(error) {
+            console.error('WebSocket错误:', error);
+            statusElement.textContent = 'WebSocket错误';
+            statusElement.className = 'status disconnected';
+        };
+    </script>
+</body>
+</html>
