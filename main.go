@@ -1,7 +1,10 @@
 package main
 
 import (
+	"embed"
+	"io/fs"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -13,6 +16,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
+
+//go:embed static/*
+var staticFS embed.FS
 
 // openBrowser 自动打开浏览器
 func openBrowser(url string) {
@@ -142,13 +148,17 @@ func main() {
 		wsManager.HandleConnection(c)
 	})
 
-	// 静态文件服务
-	r.Static("/static", "./static")
+	// 静态文件服务 - 使用嵌入的资源
+	staticSubFS, err := fs.Sub(staticFS, "static")
+	if err != nil {
+		log.Fatalf("获取静态文件子目录失败: %v", err)
+	}
+	r.StaticFS("/static", http.FS(staticSubFS))
 
 	// 主页面路由 - 直接返回HTML，不再需要URL参数
 	r.GET("/", func(c *gin.Context) {
-		// 直接返回index.html文件内容
-		content, err := os.ReadFile("./static/index.html")
+		// 直接返回index.html文件内容 - 使用嵌入的资源
+		content, err := staticFS.ReadFile("static/index.html")
 		if err != nil {
 			c.String(500, "无法读取index.html文件: %v", err)
 			return
