@@ -241,7 +241,6 @@
 </head>
 <body>
     <div class="container">
-
         <div class="status" id="status">正在连接服务器...</div>
         <div id="preview">
             <p>等待加载Markdown内容...</p>
@@ -252,35 +251,43 @@
         const statusElement = document.getElementById('status');
         const previewElement = document.getElementById('preview');
         
-        // 直接连接WebSocket，不再需要URL参数
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
-        const ws = new WebSocket(wsUrl);
+
+        function getPollURL() {
+            let filePath = window.location.pathname;
+            return '/html' + filePath;
+        }
+
+            
+        function poll() {
+            fetch(getPollURL(), {
+                method: 'GET',
+                headers: {
+                    'Cache-Control': 'no-cache'
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.text();
+            })
+            .then(data => {
+                previewElement.innerHTML = data;
+            })
+            .catch(error => {
+                console.error('长轮询错误:', error);
+                statusElement.textContent = '连接错误，正在重试...';
+                statusElement.className = 'status disconnected';
+            });
+        }
+                
+        // 初始化
+        function init() {
+           setInterval(poll, 1000);
+        }
         
-        ws.onopen = function() {
-            statusElement.textContent = '已连接到服务器，实时监听文件变化...';
-            statusElement.className = 'status connected';
-        };
-        
-        ws.onmessage = function(event) {
-            // 更新预览内容
-            previewElement.innerHTML = event.data;
-        };
-        
-        ws.onclose = function() {
-            statusElement.textContent = '与服务器断开连接，尝试重新连接...';
-            statusElement.className = 'status disconnected';
-            // 尝试重新连接
-            setTimeout(function() {
-                window.location.reload();
-            }, 3000);
-        };
-        
-        ws.onerror = function(error) {
-            console.error('WebSocket错误:', error);
-            statusElement.textContent = 'WebSocket错误';
-            statusElement.className = 'status disconnected';
-        };
+        // 页面加载完成后初始化
+        window.addEventListener('load', init);
     </script>
 </body>
 </html>

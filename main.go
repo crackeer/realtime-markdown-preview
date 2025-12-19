@@ -2,19 +2,17 @@ package main
 
 import (
 	"embed"
-	"io/fs"
+	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
-	"os/signal"
+	"path/filepath"
 	"runtime"
-	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/gorilla/websocket"
 )
 
 //go:embed static/*
@@ -38,125 +36,42 @@ func openBrowser(url string) {
 	}
 }
 
-// runWebSocketClient 运行WebSocket客户端
-func runWebSocketClient(filePath, port string) {
-	// 构建WebSocket URL
-	u := url.URL{
-		Scheme: "ws",
-		Host:   "localhost:" + port,
-		Path:   "/ws",
+var (
+	channelMap = make(map[string]map[string]chan string)
+	port       = "8080"
+	dirPath    string
+	locker     *sync.Mutex
+)
+
+func init() {
+	channelMap = make(map[string]map[string]chan string)
+	if os.Getenv("PORT") != "" {
+		port = os.Getenv("PORT")
 	}
-	q := u.Query()
-	q.Add("file", filePath)
-	u.RawQuery = q.Encode()
-
-	log.Printf("连接到 WebSocket 服务器: %s", u.String())
-
-	// 连接WebSocket
-	conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
-	if err != nil {
-		log.Fatalf("WebSocket 连接失败: %v", err)
-	}
-	defer conn.Close()
-
-	// 接收信号以退出
-	interrupt := make(chan os.Signal, 1)
-	signal.Notify(interrupt, os.Interrupt)
-
-	// 接收消息的goroutine
-	go func() {
-		defer conn.Close()
-		for {
-			messageType, message, err := conn.ReadMessage()
-			if err != nil {
-				log.Printf("读取消息失败: %v", err)
-				return
-			}
-			log.Printf("收到消息类型: %d, 长度: %d 字节", messageType, len(message))
-			// 只打印前500个字符
-			if len(message) > 500 {
-				log.Printf("消息内容: %s...", string(message[:500]))
-			} else {
-				log.Printf("消息内容: %s", string(message))
-			}
-		}
-	}()
-
-	log.Println("WebSocket 客户端已连接，等待消息...")
-
-	// 保持连接
-	select {
-	case <-interrupt:
-		log.Println("收到中断信号，关闭连接...")
-		return
-	case <-time.After(30 * time.Second):
-		log.Println("30秒超时，关闭连接...")
-		return
-	}
+	locker = &sync.Mutex{}
 }
 
 func main() {
-	// 自定义命令行参数解析，支持文件路径作为第一个参数
-	var port string = "8080"
-	var runClient bool = false
-	var filePath string
-
-	// 解析命令行参数
-	for i, arg := range os.Args[1:] {
-		if arg == "-port" && i+1 < len(os.Args[1:]) {
-			port = os.Args[1:][i+1]
-		} else if arg == "-client" {
-			runClient = true
-		} else if filePath == "" && !strings.HasPrefix(arg, "-") {
-			// 第一个非选项参数是文件路径
-			filePath = arg
-		}
+	if len(os.Args) < 2 {
+		log.Fatal("错误：必须指定Markdown文件夹路径作为第一个参数")
 	}
+	dirPath = os.Args[1]
 
-	if filePath == "" {
-		log.Fatal("错误：必须指定Markdown文件路径作为第一个参数")
-	}
-
-	log.Printf("启动Markdown实时预览服务，监听文件: %s，端口: %s", filePath, port)
-
-	// 初始化WebSocket管理器
-	wsManager := NewWebSocketManager()
-	wsManager.Start()
-
-	// 初始化文件监听器
-	watcher, err := NewFileWatcher(filePath, func() {
-		// 文件变化时，转换为HTML并广播给所有客户端
-		html, err := GetMarkdownHTML(filePath)
-		if err != nil {
-			log.Printf("转换Markdown失败: %v", err)
-			return
-		}
-		wsManager.Broadcast([]byte(html))
-	})
-	if err != nil {
-		log.Fatalf("创建文件监听器失败: %v", err)
-	}
-	watcher.Start()
+	log.Printf("启动Markdown实时预览服务，监听文件夹: %s，端口: %s", dirPath, port)
 
 	// 初始化gin路由
 	r := gin.Default()
 
-	// WebSocket路由 - 不再需要URL参数，直接使用服务器配置的文件路径
-	r.GET("/ws", func(c *gin.Context) {
-		// 将文件路径传递给WebSocket处理函数
-		c.Set("filePath", filePath)
-		wsManager.HandleConnection(c)
-	})
+	r.GET("/html/*filepath", getHTML)
 
-	// 静态文件服务 - 使用嵌入的资源
-	staticSubFS, err := fs.Sub(staticFS, "static")
-	if err != nil {
-		log.Fatalf("获取静态文件子目录失败: %v", err)
-	}
-	r.StaticFS("/static", http.FS(staticSubFS))
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		openBrowser("http://localhost:" + port)
+	}()
 
-	// 主页面路由 - 直接返回HTML，不再需要URL参数
-	r.GET("/", func(c *gin.Context) {
+	// 404路由 - 直接返回index.html
+	r.NoRoute(func(c *gin.Context) {
+
 		// 直接返回index.html文件内容 - 使用嵌入的资源
 		content, err := staticFS.ReadFile("static/index.html")
 		if err != nil {
@@ -166,20 +81,40 @@ func main() {
 		c.Data(200, "text/html; charset=utf-8", content)
 	})
 
-	// 后台打开浏览器
-	go func() {
-		// 等待服务器启动
-		time.Sleep(500 * time.Millisecond)
-		openBrowser("http://localhost:" + port)
-	}()
-
-	// 如果需要启动客户端，在后台运行
-	if runClient {
-		go runWebSocketClient(filePath, port)
-	}
-
 	// 启动服务器
 	if err := r.Run(":" + port); err != nil {
 		log.Fatalf("启动服务器失败: %v", err)
 	}
+}
+
+func getHTML(c *gin.Context) {
+
+	// 获取文件路径
+	relativePath := c.Param("filepath")
+	fmt.Printf("请求路径: %s\n", relativePath)
+	if relativePath == "/" {
+		c.String(http.StatusBadRequest, "缺少文件路径")
+		return
+	}
+
+	fullPath := filepath.Join(dirPath, relativePath)
+
+	// 检查文件是否存在
+	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+		c.String(http.StatusNotFound, "文件不存在")
+		return
+	}
+
+	// 检查是否为.md文件
+	if filepath.Ext(fullPath) != ".md" {
+		c.String(http.StatusBadRequest, "只支持.md文件")
+		return
+	}
+	html, err := GetMarkdownHTML(fullPath)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "转换Markdown失败: %v", err)
+		return
+	}
+	c.String(http.StatusOK, html)
+	return
 }
